@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>three.js webgl - loader - ttf</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <script src="./opentype.min.js"></script>
+    <script src="./three.min.js"></script>
+    <script src="./TTFLoader.js"></script>
+    <script src="./TrackballControls.js"></script>
+    <script src="scoreoutputer.min.js"></script>
+    <link type="text/css" rel="stylesheet" href="main.css" />
+  </head>
+  <body>
+    <script>
+      var so = new ScoreOutputer("109598105");
+      so.installCSS(function () {
+        so.addChild("創建場景", 2, true);
+        so.addChild("讀取字形檔", 2, true);
+        so.addChild("將地支以圓圈排列", 2, true);
+        so.addChild("滑鼠點擊 12 地支分別跳轉網頁", 1, true);
+        so.addChild(`顯示 "高等計算機圖形作業"`, 1, true);
+        so.addChild("時鐘效果", 1, true);
+        so.addChild("任何 ply 格式模型", 1, true);
+
+        so.renderModal(
+          document.body,
+          "rgba(100,45,58,1)",
+          "white",
+          "15pt",
+          "15px",
+          (dialogTitle = "自我評分表 (助教測試用)")
+        );
+        so.installDownloadBtn();
+        so.renderBtn(document.body, "開啟自評表");
+      });
+
+      let container;
+      let camera, cameraTarget, scene, renderer, controls;
+      let group, textMesh1, textMesh2, textGeo, material;
+      let secondLine, minuteLine, hourLine;
+      let firstLetter = true;
+      const raycaster = new THREE.Raycaster();
+      const mouse = new THREE.Vector2();
+
+      let text = "高等計算機圖學作業";
+      const height = 20,
+        size = 70,
+        hover = 30,
+        curveSegments = 4,
+        bevelThickness = 2,
+        bevelSize = 1.5;
+
+      let font = null;
+      const mirror = true;
+
+      let targetRotation = 0;
+      let targetRotationOnPointerDown = 0;
+
+      let pointerX = 0;
+      let pointerXOnPointerDown = 0;
+
+      let windowHalfX = window.innerWidth / 2;
+
+      init();
+      animate();
+
+      function init() {
+        container = document.createElement("div");
+        document.body.appendChild(container);
+
+        // CAMERA
+
+        camera = new THREE.PerspectiveCamera(
+          50,
+          window.innerWidth / window.innerHeight,
+          1,
+          1500
+        );
+        camera.position.set(0, 700, 900);
+
+        cameraTarget = new THREE.Vector3(0, 300, 0);
+
+        // SCENE
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+
+        // LIGHTS
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.125);
+        dirLight.position.set(0, 0, 1).normalize();
+        scene.add(dirLight);
+
+        const pointLight = new THREE.PointLight(0xffffff, 1.5);
+        pointLight.position.set(0, 100, 90);
+        pointLight.color.setHSL(Math.random(), 1, 0.5);
+        scene.add(pointLight);
+
+        material = new THREE.MeshPhongMaterial({
+          color: 0xffffff,
+          flatShading: true,
+        });
+
+        group = new THREE.Group();
+        group.position.y = 100;
+
+        scene.add(group);
+
+        const loader = new THREE.TTFLoader();
+
+        loader.load("./font.ttf", function (json) {
+          console.log(json);
+          font = new THREE.Font(json);
+          createText();
+          createClock();
+        });
+
+        const plane = new THREE.Mesh(
+          new THREE.PlaneGeometry(1000, 1000),
+          new THREE.MeshBasicMaterial({
+            color: 0x808080,
+            side: THREE.DoubleSide,
+          })
+        );
+        plane.position.y = 100;
+        plane.rotation.x = -Math.PI / 2;
+        scene.add(plane);
+
+        // RENDERER
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(renderer.domElement);
+
+        controls = new THREE.TrackballControls(camera, renderer.domElement);
+
+        // EVENTS
+
+        container.style.touchAction = "none";
+
+        document.addEventListener("keypress", onDocumentKeyPress);
+        document.addEventListener("keydown", onDocumentKeyDown);
+
+        window.addEventListener("resize", onWindowResize);
+
+        window.addEventListener("mousemove", onMouseMove, false);
+        window.addEventListener("click", onMouseClick, false);
+      }
+
+      function onWindowResize() {
+        windowHalfX = window.innerWidth / 2;
+
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function onDocumentKeyDown(event) {
+        if (firstLetter) {
+          firstLetter = false;
+          text = "";
+        }
+
+        const keyCode = event.keyCode;
+
+        // backspace
+
+        if (keyCode === 8) {
+          event.preventDefault();
+
+          text = text.substring(0, text.length - 1);
+          refreshText();
+
+          return false;
+        }
+      }
+
+      function onDocumentKeyPress(event) {
+        const keyCode = event.which;
+
+        // backspace
+
+        if (keyCode === 8) {
+          event.preventDefault();
+        } else {
+          const ch = String.fromCharCode(keyCode);
+          text += ch;
+
+          refreshText();
+        }
+      }
+
+      function onMouseMove(event) {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      }
+
+      function onMouseClick(event) {
+        raycaster.setFromCamera(mouse, camera);
+
+        const intersects = raycaster.intersectObjects(scene.children);
+        for (let i = 0; i < intersects.length; i++) {
+          if (intersects[i].object.url) {
+            window.open(intersects[i].object.url);
+          }
+        }
+      }
+
+      function createText() {
+        textGeo = new THREE.TextGeometry(text, {
+          font: font,
+
+          size: size,
+          height: height,
+          curveSegments: curveSegments,
+
+          bevelThickness: bevelThickness,
+          bevelSize: bevelSize,
+          bevelEnabled: true,
+        });
+
+        textGeo.computeBoundingBox();
+        textGeo.computeVertexNormals();
+
+        const centerOffset =
+          -0.5 * (textGeo.boundingBox.max.x - textGeo.boundingBox.min.x);
+
+        textMesh1 = new THREE.Mesh(textGeo, material);
+
+        textMesh1.position.x = centerOffset;
+        textMesh1.position.y = 10;
+        textMesh1.position.z = 100;
+
+        textMesh1.rotation.x = (Math.PI / 2) * 3;
+        textMesh1.rotation.y = Math.PI * 2;
+
+        group.add(textMesh1);
+      }
+
+      function refreshText() {
+        group.remove(textMesh1);
+        if (mirror) group.remove(textMesh2);
+
+        if (!text) return;
+
+        createText();
+      }
+
+      function createClock() {
+        const words = [
+          "子",
+          "丑",
+          "寅",
+          "卯",
+          "辰",
+          "巳",
+          "午",
+          "未",
+          "申",
+          "酉",
+          "戌",
+          "亥",
+        ];
+        for (const [i, word] of words.entries()) {
+          textGeo = new THREE.TextGeometry(word, {
+            font: font,
+            size: 30,
+            height: 10,
+            curveSegments: curveSegments,
+            bevelThickness: bevelThickness,
+            bevelSize: bevelSize,
+            bevelEnabled: true,
+          });
+
+          textGeo.computeBoundingBox();
+          textGeo.computeVertexNormals();
+
+          const centerOffset =
+            -0.5 * (textGeo.boundingBox.max.x - textGeo.boundingBox.min.x);
+
+          textMesh1 = new THREE.Mesh(textGeo, material);
+
+          textMesh1.position.x =
+            centerOffset + Math.cos((Math.PI / 6) * (3 - i)) * 150;
+          textMesh1.position.y = 300 + Math.sin((Math.PI / 6) * (3 - i)) * 150;
+          textMesh1.position.z = 2;
+
+          textMesh1.rotation.y = Math.PI * 2;
+
+          const plane = new THREE.Mesh(
+            new THREE.CircleGeometry(30, 32),
+            new THREE.MeshBasicMaterial({
+              color: 0x808080,
+              side: THREE.DoubleSide,
+            })
+          );
+          plane.position.y = textMesh1.position.y + 15;
+          plane.position.x = Math.cos((Math.PI / 6) * (3 - i)) * 150;
+          plane.position.z = 1;
+          plane.url = `https://ntut-cg-lab.github.io/cg2021f-hw${String(
+            i + 1
+          ).padStart(2, "0")}-t109598105/`;
+
+          scene.add(textMesh1);
+          scene.add(plane);
+        }
+        const plane = new THREE.Mesh(
+          new THREE.CircleGeometry(200, 32),
+          new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            side: THREE.DoubleSide,
+          })
+        );
+        plane.position.y = 300;
+        plane.rotation.x = 0;
+        scene.add(plane);
+      }
+
+      //
+
+      function animate() {
+        requestAnimationFrame(animate);
+
+        controls.update();
+
+        renderer.render(scene, camera);
+      }
+    </script>
+  </body>
+</html>
